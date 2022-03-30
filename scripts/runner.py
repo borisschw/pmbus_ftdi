@@ -5,9 +5,7 @@ from pmbus import PMBus
 
 print("Initializing PMBUS... \n")
 
-DRQ = PMBus(0x12) #New pmbus object with device address 0x12
-
-time.sleep(1)
+DRQ = PMBus(0x68) #New pmbus object with device address 0x12
 
 DRQ.setVinUVLimit(36.0)
 

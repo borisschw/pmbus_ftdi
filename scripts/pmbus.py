@@ -1,4 +1,11 @@
-from smbus import SMBus
+# from smbus import SMBus
+
+from logging import ERROR, getLogger
+from os import environ
+from sys import modules, stdout
+from pyftdi.i2c import I2cController, I2cNackError
+from time import sleep
+
 import math
 
 class PMBus:
@@ -8,7 +15,10 @@ class PMBus:
     VOUT_N = 0b00000
 
     def __init__(self, addr, id=1):
-        self.busID = id
+        self.i2c = I2cController()
+        self.i2c.configure('ftdi://ftdi:4232h/1')
+        self.device = self.i2c.get_port(addr)
+        # self.busID = id
         self.address = addr
         self.VOUT_MODE = self._readBytePMBus(0x20)
         voutN = self.VOUT_MODE & 0b00011111
@@ -35,30 +45,35 @@ class PMBus:
 
     #wrapper functions for reading/writing a word/byte to an address with pec
     def _writeWordPMBus(self, cmd, word, pecByte=True):
-        bus = SMBus(self.busID)
-        bus.pec = pecByte
-        bus.write_word_data(self.address, cmd, word)
-        bus.close()
+        self.device.write_to(0x59, word.to_bytes(2, 'big'))
+
+        # bus.write_word_data(self.address, cmd, word)
+        # bus.close()
 
     def _readWordPMBus(self, cmd, pecByte=True):
-        bus = SMBus(self.busID)
-        bus.pec = pecByte
-        data = bus.read_word_data(self.address, cmd)
-        bus.close()
+        # data = self.device.read_from(cmd,2)
+        data = int.from_bytes(self.device.read_from(cmd,2), "big")
+        # bus = SMBus(self.busID)
+        # bus.pec = pecByte
+        # data = bus.read_word_data(self.address, cmd)
+        # bus.close()
         return data
 
-    def _writeBytePMBus(self, cmd, byte, pecByte=True):
-        bus = SMBus(self.busID)
-        bus.pec = pecByte
-        bus.write_byte_data(self.address, cmd, byte)
-        bus.close()
+    # def _writeBytePMBus(self, cmd, byte, pecByte=True):
+    #     bus = SMBus(self.busID)
+    #     bus.pec = pecByte
+    #     bus.write_byte_data(self.address, cmd, byte)
+    #     bus.close()
 
     def _readBytePMBus(self, cmd, pecByte=True):
-        bus = SMBus(self.busID)
-        bus.pec = pecByte
-        data = bus.read_byte_data(self.address, cmd)
-        bus.close()
+        # data = self.device.read_from(cmd,1)
+        data = int.from_bytes(self.device.read_from(cmd,1), "big")
         return data
+    #     bus = SMBus(self.busID)
+    #     bus.pec = pecByte
+    #     data = bus.read_byte_data(self.address, cmd)
+    #     bus.close()
+    #     return data
 
     ################################### Functions for setting PMBus values
     def setVinUVLimit(self, uvLimit, minUnderVolt=32.0):
@@ -255,9 +270,9 @@ class PMBus:
         return self.voltageOut
 
     def getCurrent(self):
-        bus = SMBus(1)
+        # bus = SMBus(1)
         self.current = self._decodePMBus(self._readWordPMBus(0x8C))
-        bus.close()
+        # bus.close()
         return self.current
 
     def getPowerOut(self, fromDRQ):
@@ -311,20 +326,20 @@ class PMBus:
         #returns value in %
         return self._decodePMBus(self._readWordPMBus(0x94))
 
-    def getIoutFaultResponse(self):
-        #see page 37-40 on PMBus spec for info on response bytes
-        return self._readBytePMBus(0x47)
+    # def getIoutFaultResponse(self):
+    #     #see page 37-40 on PMBus spec for info on response bytes
+    #     return self._readBytePMBus(0x47)
 
-    def getFaultResponse(self, register):
-        #see page 37-40 on PMBus spec for info on response bytes
-        """
-        DRQ1250 registers:
-        VIN UV  = 0x5A
-        VIN OV  = 0x56
-        VOUT OV = 0x41
-        OT      = 0x50
-        """
-        return self._readBytePMBus(register)
+    # def getFaultResponse(self, register):
+    #     #see page 37-40 on PMBus spec for info on response bytes
+    #     """
+    #     DRQ1250 registers:
+    #     VIN UV  = 0x5A
+    #     VIN OV  = 0x56
+    #     VOUT OV = 0x41
+    #     OT      = 0x50
+    #     """
+    #     return self._readBytePMBus(register)
 
     #members for getting the status of the DRQ device
     #see PMBUS spec part two pages 77-79
@@ -361,3 +376,41 @@ class PMBus:
         if (val & (1 << (bits - 1))) != 0: # if sign bit is set e.g., 8bit: 128-255
             val = val - (1 << bits)        # compute negative value
         return val
+
+
+    def scan(self):
+        i2c = I2cController()
+        i2c.configure('ftdi://ftdi:4232h/1')
+        slave = i2c.get_port(0x68)
+
+        for i in range(50):
+            ret = slave.read_from(i,1)
+            print(ret)
+
+        # # """Open an I2c connection to a slave"""
+        # url = environ.get('FTDI_DEVICE', 'ftdi://ftdi:4232h/1')
+
+        # i2c = I2cController()
+        # slaves = []
+        # getLogger('pyftdi.i2c').setLevel(ERROR)
+        # try:
+        #     i2c.set_retry_count(1)
+        #     i2c.configure(url)
+        #     for addr in range(i2c.HIGHEST_I2C_ADDRESS+1):
+        #         port = i2c.get_port(addr)
+        #         try:
+        #             port.read(0)
+        #             slaves.append('X')
+        #         except I2cNackError:
+        #             slaves.append('.')
+        # finally:
+        #     i2c.terminate()
+        # columns = 16
+        # row = 0
+        # print('   %s' % ''.join(' %01X ' % col for col in range(columns)))
+        # while True:
+        #     chunk = slaves[row:row+columns]
+        #     if not chunk:
+        #         break
+        #     print(' %1X:' % (row//columns), '  '.join(chunk))
+        #     row += columns
